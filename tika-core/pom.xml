@@ -290,6 +290,19 @@
           </execution>
         </executions>
       </plugin>
+      <!-- ChatUniTest : génération de tests avec Ollama -->
+      <plugin>
+        <groupId>io.github.zju-aces-ise</groupId>
+        <artifactId>chatunitest-maven-plugin</artifactId>
+        <version>2.1.1</version>
+        <configuration>
+          <apiKeys>local</apiKeys>
+          <model>codeqwen:v1.5-chat</model>
+          <url>http://localhost:11434/v1/chat/completions</url>
+          <testNumber>3</testNumber>
+          <maxRounds>2</maxRounds>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
   <reporting>
