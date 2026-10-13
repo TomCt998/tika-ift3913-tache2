@@ -180,6 +180,170 @@ J'ai choisi de conserver ce résultat plutôt que d'ajouter davantage de tests a
 
 Section Mahdi Slimani
 
+# 1.Choix de la classe
+
+J'ai choisi "SecureContentHandler",qui est une classe qui protège le traitement des documents contre certaines entrées excessives, par exemple une sortie disproportionnée par rapport à la taille d'entrée ou des éléments XML trop imbriqués.
+
+Elle avait déjà un fichier de tests, "SecureContentHandlerTest.java", avec 8 tests. Je l'ai choisie parce que son code n'était pas entièrement couvert avec ces tests. Pendant la mesure initiale avec JaCoCo, la couverture était de 88 % des instructions et de 72 % des branches. Il restait donc des comportements à vérifier, comme aux limites des seuils et lors de la transmission d'événements XML.
+
+Fichiers concernés :
+
+- tika-core/src/main/java/org/apache/tika/sax/SecureContentHandler.java
+- tika-core/src/test/java/org/apache/tika/sax/SecureContentHandlerTest.java (tests d'origine)
+- tika-core/src/test/java/org/apache/tika/sax/SecureContentHandlerAITest.java (test de l'IA, un peu corrigé manuellement)
+- tika-core/src/test/java/org/apache/tika/sax/SecureContentHandlerManualTest.java (tests manuels)
+
+# 2.Tests existants et état initial
+
+J'ai d'abord exécuté les 8 tests de base sans modifier le code. Ces tests vérifiaient le rapport entre les caractères produits et 
+les octets du document, les limites de profondeur des éléments XML et les limites d'imbrication des éléments package-entry.
+Et apres j'ai utilisé JaCoCo pour voir la couverture avant les nouveaux tests :
+
+Instructions couvertes : 88 % 
+Branches couvertes : 72 %
+Lignes non couvertes : 6 sur 63 
+Méthodes non couvertes : 2 sur 17 
+
+Ces chiffres sont de la mesure faite avec l'ensemble des tests du module. La couverture indiquee apres par PITest est différente, parce que l'analyse de mutation cible juste les tests sélectionnés pour cette classe.
+
+
+# 3.Génération automatique avec ChatUniTest
+
+J'ai utilisé ChatUniTest 2.1.1 avec un modèle exécuté localement grâce à Ollama, sur Windows avec Java 21 et le Maven Wrapper du projet.
+
+J'avais d'abord essayé "qwen2.5-coder:7b". Mais ChatUniTest refusait ce nom de modèle, car il ne faisait pas partie de ceux reconnus par cette version du plugin. Et j'ai donc utilisé "codeqwen:v1.5-chat" qui est compatible avec le plugin et exécuté localement par Ollama.
+
+L'exécution de ChatUniTest sur "SecureContentHandler" a duré environ 5 minutes. Le plugin a terminé avec BUILD SUCCESS, mais ca ne voulait pas dire que les tests generes etaient valides. Dans les journaux, j'ai vu plusieurs échecs de compilation et des tentatives de correction automatique qui n'ont pas suffi.
+
+# 3.1 Problèmes rencontrés
+
+Les principaux problèmes  étaient :
+
+- Dépendances non disponibles lors de la compilation générée : certains tests utilisaient Mockito ("org.mockito", "@Mock", "@InjectMocks"), mais ils n'étaient pas accessibles dans l'environnement utilisé par ChatUniTest.
+- Méthodes inexistantes : les tests appelaient getCurrentDepth()" et "getPackageEntryDepths()", alors que "SecureContentHandler" ne fournit pas ces méthodes.
+- Scénarios incorrects : certains tests supposaient qu'une opération pouvait continuer même après une exception de profondeur maximale.
+- Corrections automatiques insuffisantes : des tentatives de réparation échouaient encore à la compilation.
+
+Les messages d'erreur et les historiques ont été retrouvés dans les résultats temporaires de ChatUniTest, sous "C:\tmp\chatunitest-info\...".
+
+# 3.2 Test conservé et corrections manuelles
+
+J'ai récupéré deux propositions dans les historiques de ChatUniTest et les ai adaptées dans "SecureContentHandlerAITest.java" :
+
+- "testEndElement()" : le test généré utilisait Mockito et des getters inexistants pour inspecter l'état interne. je l'ai un peu réécrit pour utiliser un "DefaultHandler" qui compte les événements "endElement()" reçus. Son oracle vérifie qu'un événement est bien transmis.
+- "testIgnorableWhitespace()" : la proposition générée vérifiait, avec Mockito, que "ignorableWhitespace()" transmettait les caractères "a", "b", "c" au gestionnaire. J'ai gardé ce scénario et ces données, mais remplacé Mockito par un "DefaultHandler" qui recueille les caractères, et apres par une assertion sur le texte reçu (""abc"").
+
+Aucun de ces deux tests n'avait compilé directement à la sortie de ChatUniTest. Ils sont donc des tests issus de  l'IA et corrigés manuellement, pas comme des tests exécutables sans intervention.
+
+Pour les deux tests retenus, les interventions ont été la suppression de Mockito, l'utilisation de gestionnaires XML simples et pour "endElement()", le remplacement des vérifications internes par une interaction observable.
+
+# 4. Comparaison qualitative des oracles
+
+Les tests d'origine vérifiaient principalement l'apparition ou l'absence d'une "SAXException" lorsque les seuils de sécurité étaient franchis. Dans les propositions de ChatUniTest certains oracles étaient pas tres fiables : ils cherchaient à consulter des états internes avec des méthodes inexistantes ou supposaient un comportement incorrect après une exception.
+
+Les oracles des deux tests IA adaptés sont plus simples et observables :
+
+| Test IA adapté | Oracle | Limite |
+| "testEndElement()" | "assertEquals(1, count.get())" : un événement de fermeture atteint le gestionnaire XML. | Ne vérifie pas à lui seul tous les effets sur la profondeur interne. |
+| "testIgnorableWhitespace()" | "assertEquals("abc", receiver.text)" : les caractères ignorables sont bien transmis. | Ne vérifie pas que ces caractères sont comptabilisés par "advance()" pour contrôler le ratio de compression. |
+
+Cette limite a été confirmée par PITest : la suppression de "super.ignorableWhitespace()" a été détectée mais la suppression de "advance()" a survécu. L'IA avait proposé un oracle utile pour la transmission mais insuffisant pour toute la logique de sécurité de la méthode.
+
+# 5. Analyse de mutation avec PITest
+
+J'ai configuré PITest 1.30.0 avec le support JUnit 5 et ciblé "SecureContentHandler". Les mesures ont été faites progressivement : tests originaux, premier test IA adapté, six tests manuels, puis deuxième test IA adapté.
+
+| Mesure | Tests d'origine | + 1er test IA | + 6 tests manuels | + 2e test IA (final) |
+| Nombre de tests | 8 | 9 | 15 | 16 |
+| Mutants générés | 39 | 39 | 39 | 39 |
+| Mutants tués | 20 | 22 | 29 | 30 |
+| Mutants survivants | 5 | 6 | 0 | 1 |
+| Mutants non couverts | 14 | 11 | 10 | 8 |
+| Score de mutation | 51 % | 56 % | 74 % | 77 % |
+| Force des tests (*test strength*) | 80 % | 79 % | 100 % | 97 % |
+| Lignes couvertes dans PITest | 38/67 (57 %) | 42/67 (63 %) | 50/67 (75 %) | 53/67 (79 %) |
+
+Le premier test IA adapté a fait passer les mutants tués de 20 à 22, notamment en détectant la suppression de "super.endElement()". Les six tests manuels ont ensuite permis d'atteindre 29 mutants tués et aucun mutant survivant parmi le code exécuté à ce stade.
+
+Le deuxième test IA adapté, "testIgnorableWhitespace()", a apporté une couverture supplémentaire : le mutant supprimant l'appel à "super.ignorableWhitespace()"  est passé de "NO_COVERAGE" à "KILLED". En revanche, le mutant supprimant l'appel à "advance()" est passé de "NO_COVERAGE" à "SURVIVED", car notre oracle ne vérifie que la transmission du texte et non sa comptabilisation.
+
+Au résultat final, 30 mutants sur 39 sont tués, 1 survit et 8 ne sont pas couverts. Le score de mutation est 77 %, tandis que la force des tests est de 97 % (30/31). Ces deux mesures ne sont pas interchangeables : la première tient compte de tous les mutants générés, la seconde des mutants effectivement couverts.
+
+# 6. Tests ajoutés manuellement
+
+Les tests manuels ont été placés dans "SecureContentHandlerManualTest.java", séparément du test adapté à partir de ChatUniTest.
+
+# 6.1 "testOutputThreshold()"
+
+- Intention : vérifier le comportement exactement à la limite du nombre de caractères autorisé, notamment pour détecter un remplacement de ">" par ">=" à la ligne 235.
+- Données : seuil fixé à 10, sortie de 10 caractères, ratio fixé à 0 pour rendre observable une éventuelle vérification supplémentaire à la limite exacte.
+- Oracle : "assertDoesNotThrow" : le code original ne doit pas déclencher d'exception tant que le seuil n'est pas dépassé.
+- Résultat : après recompilation des tests et nouvelle analyse PITest, le mutant de la ligne 235 est passé de "SURVIVED" à "KILLED".
+
+Le ratio 0 est une valeur particulière choisie pour distinguer le code original du code muté à la frontière du seuil. Ce test cible donc spécifiquement cette condition.
+
+# 6.2 "testCompressionRatio()"
+
+- Intention : vérifier que le ratio maximal est accepté à l'égalité, et détecter le changement de ">" en ">=" à la ligne 237.
+- Données : entrée de 10 octets, 20 caractères produits, ratio maximal fixé à 2 et seuil fixé à 0.
+- Oracle : "assertDoesNotThrow" : un ratio exactement égal à la limite ne doit pas provoquer d'exception.
+
+# 6.3 "testStartElement()"
+
+- Intention : vérifier que "startElement()" transmet l'événement au gestionnaire XML sous-jacent. Cela cible la suppression de "super.startElement()" à la ligne 260.
+- Données : un seul événement XML envoyé à un gestionnaire très simple qui incrémente un compteur.
+- Oracle : "assertEquals(1, receiver.count)" : le gestionnaire doit recevoir exactement un appel.
+
+# 6.4 "testDepth()"
+
+- Intention : vérifier que la profondeur diminue correctement lorsqu'un élément est fermé. Cela permet de détecter le remplacement de "currentDepth--" par "currentDepth++" à la ligne 271.
+- Données : profondeur maximale de 3 ; ouverture d'un élément, fermeture, puis ouverture de deux éléments.
+- Oracle : "assertDoesNotThrow" lors de la dernière ouverture. Si la profondeur n'était pas réduite lors de la fermeture, cette séquence dépasserait la limite.
+
+# 6.5 "testCharacters()"
+
+- Intention : vérifier que "characters()" transmet le texte au gestionnaire XML, notamment pour détecter la suppression de "super.characters()" à la ligne 277.
+- Données : chaîne simple "hello" ; le gestionnaire reçu conserve le texte dans une variable.
+- Oracle : "assertEquals("hello", receiver.text)" : le texte reçu doit être identique au texte transmis.
+
+# 6.6 "testOtherHandlerException()"
+
+- Intention : vérifier que "throwIfCauseOf()" reconnaît l'instance responsable d'une exception, et pas une autre instance. Ce test cible le mutant qui fait toujours retourner "true" à "isCausedBy()" à la ligne 303.
+- Données : deux instances distinctes de "SecureContentHandler"; la première génère une exception avec une profondeur maximale de 1.
+- Oracles : "assertDoesNotThrow" pour la seconde instance et "assertThrows(TikaException.class, ...)" pour la première.
+
+# 7. Vérification de l'exécution
+
+Après l'ajout des tests et la correction des problèmes de style Java (en-tête Apache, fins de ligne LF et imports explicites), j'ai exécuté les tests avec Maven sans désactiver Checkstyle. Le dernier résultat local était :
+
+- 8/8 tests d'origine réussis 
+- 2/2 tests IA adaptés réussis
+- 6/6 tests manuels réussis
+- 16 tests réussis au total, sans erreur, échec ni test ignoré 
+- BUILD SUCCESS.
+
+Pendant de la vérification précédente avec 15 tests, Checkstyle ne signalait plus aucune violation. La dernière exécution à 16 tests a aussi réussi avec Checkstyle activé, sans signalement qui bloque.
+
+Commande utilisée depuis la racine du dépôt :
+
+```cmd
+.\mvnw.cmd -pl tika-core -am -Dtest=SecureContentHandlerTest,SecureContentHandlerAITest,SecureContentHandlerManualTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+Commande de l'analyse de mutation, après compilation des tests :
+
+```cmd
+.\mvnw.cmd -pl tika-core org.pitest:pitest-maven:1.30.0:mutationCoverage
+```
+
+# 8. Bilan et limites
+
+Le travail a permis de passer de 20 mutants tués sur 39 (51 %) avec les tests d'origine à 30 sur 39 (77 %) avec les 16 tests. Les deux scénarios proposés par ChatUniTest et adaptés manuellement ont permis de tester la transmission de "endElement()" et de "ignorableWhitespace()". Les six tests manuels ont ciblé des limites et comportements supplémentaires.
+
+La principale difficulté a été d'obtenir du code compilable depuis ChatUniTest. Les propositions initiales faisaient appel à Mockito non disponible dans l'environnement de génération, à des méthodes inexistantes et parfois à des hypothèses incorrectes. Les deux tests retenus ont donc nécessité une intervention manuelle.
+
+Le résultat final ne signifie pas que la classe est entièrement testée : 8 mutants restent non couverts, notamment dans certaines méthodes de configuration, et un mutant survit à la ligne 282. Ce dernier supprime la comptabilisation des caractères dans "ignorableWhitespace()" ; le test IA adapté ne le détecte pas parce qu'il vérifie uniquement la transmission des caractères au gestionnaire. La force des tests finale est donc de 97 %, et non de 100 %.
+
 
 
 
