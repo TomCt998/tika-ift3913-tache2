@@ -1,7 +1,5 @@
 # IFT3913 — Tâche 2 : Qualité logicielle
 
-Ce dépôt est utilisé dans le cadre de la tâche 2 du cours IFT3913 de l'Université de Montréal.
-
 Équipe : Thomas Côté et Mahdi Slimani
 
 Section Thomas Côté 
