@@ -119,6 +119,19 @@
       <artifactId>junit-jupiter-engine</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Mockito pour les tests générés par ChatUniTest -->
+    <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-core</artifactId>
+        <scope>test</scope>
+    </dependency>
+
+    <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-junit-jupiter</artifactId>
+        <version>${mockito-junit-jupiter.version}</version>
+        <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -302,6 +315,33 @@
           <testNumber>3</testNumber>
           <maxRounds>2</maxRounds>
         </configuration>
+      </plugin>
+      <!-- PITest : tests de mutation -->
+      <plugin>
+          <groupId>org.pitest</groupId>
+          <artifactId>pitest-maven</artifactId>
+          <version>1.20.3</version>
+          <configuration>
+              <targetClasses>
+                  <param>org.apache.tika.utils.CharsetUtils</param>
+              </targetClasses>
+              <targetTests>
+                <param>org.apache.tika.utils.CharsetUtilsTest</param>
+                <param>org.apache.tika.utils.CharsetUtils_clean_2_0_Test</param>
+                <param>org.apache.tika.utils.CharsetUtilsManualTest</param>              </targetTests>
+              <threads>2</threads>
+              <outputFormats>
+                  <param>HTML</param>
+                  <param>XML</param>
+              </outputFormats>
+          </configuration>
+          <dependencies>
+              <dependency>
+                  <groupId>org.pitest</groupId>
+                  <artifactId>pitest-junit5-plugin</artifactId>
+                  <version>1.2.3</version>
+              </dependency>
+          </dependencies>
       </plugin>
     </plugins>
   </build>
